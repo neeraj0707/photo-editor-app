@@ -20,7 +20,8 @@ import ViewShot from 'react-native-view-shot';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-
+import Slider from '@react-native-community/slider';
+import Share from 'react-native-share';
 
 // ─── DraggableText (fixed: stable key via item.id, spawn offset) ──────────────
 
@@ -115,6 +116,13 @@ function EditScreen({ route, navigation }) {
   const [textSize, setTextSize] = useState(22);
   const [textFont, setTextFont] = useState('Poppins-Regular');
   const [isSaving, setIsSaving] = useState(false);
+  const [brightness, setBrightness] = useState(0);
+  const [contrast, setContrast] = useState(0);
+  const [saturation, setSaturation] = useState(0);
+  const [warmth, setWarmth] = useState(0);
+  const [history, setHistory] = useState([]);
+  const [redoStack, setRedoStack] = useState([]);
+
 
   // ✅ ViewShot ref — wraps the canvas
   const viewShotRef = useRef(null);
@@ -127,6 +135,7 @@ function EditScreen({ route, navigation }) {
     { id: 'crop', label: 'Crop', iconLib: 'material', iconName: 'crop' },
     { id: 'rotate', label: 'Rotate', iconLib: 'material', iconName: 'rotate-right' },
     { id: 'text', label: 'Text', iconLib: 'community', iconName: 'format-text' },
+    { id: 'adjust', label: 'Adjust', iconLib: 'community', iconName: 'tune-variant' },
     { id: 'ai', label: 'AI Tools', iconLib: 'material', iconName: 'auto-fix-high' },
   ];
 
@@ -216,6 +225,79 @@ function EditScreen({ route, navigation }) {
     }
   };
 
+  // ─── Undo / Redo & Share Logic ───
+
+  // Call this function whenever you want to save a point in history
+  // (e.g., when a slider stops moving or text is added)
+  const takeSnapshot = () => {
+    const snapshot = {
+      texts: [...texts],
+      brightness,
+      contrast,
+      saturation,
+      warmth,
+      activeFilter,
+      rotation,
+    };
+    setHistory(prev => [...prev, snapshot]);
+    setRedoStack([]); // Clear redo whenever a new action is taken
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+
+    // 1. Get the current state to put into the Redo stack
+    const currentState = { texts, brightness, contrast, saturation, warmth, activeFilter, rotation };
+    setRedoStack(prev => [currentState, ...prev]);
+
+    // 2. Pull the last item from history
+    const prev = history[history.length - 1];
+    const newHistory = history.slice(0, -1);
+
+    // 3. Update all states
+    setHistory(newHistory);
+    setTexts(prev.texts);
+    setBrightness(prev.brightness);
+    setContrast(prev.contrast);
+    setSaturation(prev.saturation);
+    setWarmth(prev.warmth);
+    setActiveFilter(prev.activeFilter);
+    setRotation(prev.rotation);
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0) return;
+
+    // 1. Get the item from redo
+    const next = redoStack[0];
+    const newRedo = redoStack.slice(1);
+
+    // 2. Put current state back into history
+    const currentState = { texts, brightness, contrast, saturation, warmth, activeFilter, rotation };
+    setHistory(prev => [...prev, currentState]);
+
+    // 3. Update all states
+    setRedoStack(newRedo);
+    setTexts(next.texts);
+    setBrightness(next.brightness);
+    setContrast(next.contrast);
+    setSaturation(next.saturation);
+    setWarmth(next.warmth);
+    setActiveFilter(next.activeFilter);
+    setRotation(next.rotation);
+  };
+
+  const handleShare = async () => {
+    try {
+      const uri = await viewShotRef.current.capture();
+      await Share.open({ url: `file://${uri}` });
+    } catch (err) {
+      if (err?.message !== 'User did not share') {
+        console.log('Share error:', err);
+      }
+    }
+  };
+
   // ─── Tool panel renderer ───────────────────────────────────────────────────
 
   const renderToolOptions = () => {
@@ -254,6 +336,110 @@ function EditScreen({ route, navigation }) {
       );
     }
 
+    if (activeTool === 'adjust') {
+      return (
+        <View style={styles.adjustPanel}>
+
+          {/* Brightness */}
+          <View style={styles.adjustRow}>
+            <MaterialIcons name="brightness-6" size={18} color="#aaa" />
+            <Text style={styles.adjustLabel}>Brightness</Text>
+            <Slider
+              style={styles.adjustSlider}
+              minimumValue={-1}
+              maximumValue={1}
+              step={0.01}
+              value={brightness}
+              onValueChange={setBrightness}
+              minimumTrackTintColor="#7F77DD"
+              maximumTrackTintColor="#444"
+              thumbTintColor="#7F77DD"
+              onSlidingComplete={takeSnapshot}
+            />
+            <Text style={styles.adjustValue}>
+              {Math.round(brightness * 100)}
+            </Text>
+          </View>
+
+          {/* Contrast */}
+          <View style={styles.adjustRow}>
+            <MaterialIcons name="contrast" size={18} color="#aaa" />
+            <Text style={styles.adjustLabel}>Contrast</Text>
+            <Slider
+              style={styles.adjustSlider}
+              minimumValue={-1}
+              maximumValue={1}
+              step={0.01}
+              value={contrast}
+              onValueChange={setContrast}
+              minimumTrackTintColor="#7F77DD"
+              maximumTrackTintColor="#444"
+              thumbTintColor="#7F77DD"
+              onSlidingComplete={takeSnapshot}
+            />
+            <Text style={styles.adjustValue}>
+              {Math.round(contrast * 100)}
+            </Text>
+          </View>
+
+          {/* Saturation */}
+          <View style={styles.adjustRow}>
+            <MaterialCommunityIcons name="palette-outline" size={18} color="#aaa" />
+            <Text style={styles.adjustLabel}>Saturation</Text>
+            <Slider
+              style={styles.adjustSlider}
+              minimumValue={-1}
+              maximumValue={1}
+              step={0.01}
+              value={saturation}
+              onValueChange={setSaturation}
+              minimumTrackTintColor="#7F77DD"
+              maximumTrackTintColor="#444"
+              thumbTintColor="#7F77DD"
+              onSlidingComplete={takeSnapshot}
+            />
+            <Text style={styles.adjustValue}>
+              {Math.round(saturation * 100)}
+            </Text>
+          </View>
+
+          {/* Warmth */}
+          <View style={styles.adjustRow}>
+            <MaterialCommunityIcons name="thermometer" size={18} color="#aaa" />
+            <Text style={styles.adjustLabel}>Warmth</Text>
+            <Slider
+              style={styles.adjustSlider}
+              minimumValue={-1}
+              maximumValue={1}
+              step={0.01}
+              value={warmth}
+              onValueChange={setWarmth}
+              minimumTrackTintColor="#7F77DD"
+              maximumTrackTintColor="#444"
+              thumbTintColor="#7F77DD"
+              onSlidingComplete={takeSnapshot}
+            />
+            <Text style={styles.adjustValue}>
+              {Math.round(warmth * 100)}
+            </Text>
+          </View>
+
+          {/* Reset button */}
+          <TouchableOpacity
+            style={styles.adjustResetBtn}
+            onPress={() => {
+              setBrightness(0);
+              setContrast(0);
+              setSaturation(0);
+              setWarmth(0);
+            }}>
+            <Text style={styles.adjustResetText}>Reset</Text>
+          </TouchableOpacity>
+
+        </View>
+      );
+    }
+
     if (activeTool === 'text') {
       return (
         <View style={styles.textPanel}>
@@ -269,6 +455,7 @@ function EditScreen({ route, navigation }) {
               style={styles.textAddBtn}
               onPress={() => {
                 if (textValue.trim()) {
+                  takeSnapshot();
                   setTexts(prev => [
                     ...prev,
                     {
@@ -343,18 +530,51 @@ function EditScreen({ route, navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       {/* Top Bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.topBarBtn}>✕</Text>
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Edit</Text>
-        {/* ✅ Save button wired up */}
-        <TouchableOpacity onPress={saveImage} disabled={isSaving}>
-          {isSaving
-            ? <ActivityIndicator size="small" color="#7F77DD" />
-            : <Text style={styles.topBarSave}>Save</Text>
-          }
-        </TouchableOpacity>
+
+      <View style={styles.header}>
+        {/* Left: X + Undo + Redo */}
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <MaterialIcons name="close" size={26} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleUndo}
+            disabled={history.length === 0}
+            style={{ marginLeft: 14 }}>
+            <MaterialIcons
+              name="undo"
+              size={25}
+              color={history.length === 0 ? '#555' : '#fff'}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleRedo}
+            disabled={redoStack.length === 0}
+            style={{ marginLeft: 14 }}>
+            <MaterialIcons
+              name="redo"
+              size={25}
+              color={redoStack.length === 0 ? '#555' : '#fff'}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {/* Center: Title */}
+        <Text style={styles.headerTitle}>Edit</Text>
+
+        {/* Right: Share + Save */}
+        <View style={styles.headerRight}>
+          <TouchableOpacity onPress={handleShare} style={{ marginRight: 16 }}>
+            <MaterialIcons name="share" size={24} color="#7F77DD" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={saveImage}>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#7F77DD" />
+            ) : (
+              <Text style={styles.saveBtn}>Save</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* ✅ ViewShot wraps ONLY the canvas — not toolbar/topbar */}
@@ -374,6 +594,40 @@ function EditScreen({ route, navigation }) {
             styles.filterOverlay,
             { backgroundColor: currentFilter.overlay, opacity: currentFilter.opacity },
           ]} />
+        )}
+
+        {/* ── Adjust overlays ── */}
+
+        {/* Brightness — positive = white, negative = black */}
+        {brightness !== 0 && (
+          <View style={[styles.filterOverlay, {
+            backgroundColor: brightness > 0 ? '#fff' : '#000',
+            opacity: Math.abs(brightness) * 0.6,
+          }]} />
+        )}
+
+        {/* Contrast — dark overlay to boost contrast */}
+        {contrast !== 0 && (
+          <View style={[styles.filterOverlay, {
+            backgroundColor: contrast > 0 ? '#000' : '#fff',
+            opacity: Math.abs(contrast) * 0.15,
+          }]} />
+        )}
+
+        {/* Saturation — gray overlay to desaturate */}
+        {saturation < 0 && (
+          <View style={[styles.filterOverlay, {
+            backgroundColor: '#808080',
+            opacity: Math.abs(saturation) * 0.8,
+          }]} />
+        )}
+
+        {/* Warmth — orange = warm, blue = cool */}
+        {warmth !== 0 && (
+          <View style={[styles.filterOverlay, {
+            backgroundColor: warmth > 0 ? '#ff8800' : '#0055ff',
+            opacity: Math.abs(warmth) * 0.2,
+          }]} />
         )}
 
         {/* ✅ Texts render on TOP of filter */}
@@ -513,6 +767,84 @@ const styles = StyleSheet.create({
     borderRadius: 11, justifyContent: 'center', alignItems: 'center', zIndex: 10,
   },
   deleteBtnText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  adjustPanel: {
+    backgroundColor: '#1a1a1a',
+    borderTopWidth: 0.5,
+    borderTopColor: '#333',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  adjustRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  adjustLabel: {
+    color: '#aaa',
+    fontSize: 12,
+    width: 72,
+    marginLeft: 6,
+  },
+  adjustSlider: {
+    flex: 1,
+    height: 36,
+  },
+  adjustValue: {
+    color: '#7F77DD',
+    fontSize: 11,
+    width: 30,
+    textAlign: 'right',
+  },
+  adjustResetBtn: {
+    alignSelf: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: '#555',
+    marginTop: 4,
+  },
+  adjustResetText: {
+    color: '#aaa',
+    fontSize: 12,
+  },
+  // Styles
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#1a1a1a',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontFamily: 'PlayfairDisplay',
+    fontWeight: '700',
+    flex: 1,
+    textAlign: 'center',
+    letterSpacing: 0.5,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  saveBtn: {
+    color: '#7F77DD',
+    fontSize: 16,
+    fontFamily: 'Poppins-Bold',
+    fontWeight: '700',
+    paddingHorizontal: 5,
+  },
 });
 
 export default EditScreen;
